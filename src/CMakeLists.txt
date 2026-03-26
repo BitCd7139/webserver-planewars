@@ -3,6 +3,7 @@
 # 但如果 .hpp 包含了模板实现，加入列表可以方便 IDE（如 CLion）识别关联
 set(SRC_FILES
         main.cpp
+        log/logger.cpp
         # 如果 util 目录下有 .cpp 文件，也要写在这里：
         # util/socket.cpp
 )
