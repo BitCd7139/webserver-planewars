@@ -7,6 +7,7 @@
 
 namespace webserver {
     class server {
+    public:
 
     };
 

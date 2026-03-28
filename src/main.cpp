@@ -60,7 +60,7 @@ int main() {
     // 3. 事件循环
     while (true) {
         std::vector<channel*> active_channels;
-        epoller.poll(active_channels, -1); // 阻塞等待事件
+        epoller.Poll(active_channels, -1); // 阻塞等待事件
 
         for (auto ch : active_channels) {
             ch->handle_events(); // 处理读写回调

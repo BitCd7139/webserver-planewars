@@ -24,10 +24,10 @@ namespace webserver {
         bool remove_channel(channel* channel);
         bool modify_channel(channel* channel);
 
-        void poll(std::vector<channel*>& active_channels, int timeout = -1);
+        void Poll(std::vector<channel*>& active_channels, int timeout = -1);
 
     private:
-        bool update(int operation, channel* channel) const;
+        bool Update(int operation, channel* channel) const;
 
         int epoll_fd_;
         std::vector<epoll_event> epoll_events_;
