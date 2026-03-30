@@ -5,6 +5,8 @@
 #include "http_conn.h"
 #include "log/logger.h"
 #include <string_view>
+#include <optional>
+#include <charconv>
 
 namespace webserver {
     void HttpConn::HandleRead() {
@@ -14,28 +16,46 @@ namespace webserver {
             HandleClose();
         }
         else if (bytes_read < 0) {
-
+            //TODO: 处理 error
         }
         else {
-            //TODO
-            if (read_buffer_.find_crlf_crlf() != nullptr) {
-                // 暂时不解析 Request，直接生成 Response
-                std::string response =
-                    "HTTP/1.1 200 OK\r\n"
-                    "Content-Length: 11\r\n"
-                    "Connection: close\r\n" // 暂时用短连接，简化状态管理
-                    "\r\n"
-                    "Hello World";
+            std::string_view data(read_buffer_.peek(), read_buffer_.readable_bytes());
+            size_t consumed = request_.Parse(data);
+            read_buffer_.Retrieve(consumed);
 
-                write_buffer_.Append(response);
-
+            if (request_.is_error()) {
+                // 400 Bad Request
+                response_.set_status_code(400);
+                response_.set_body("400 Bad Request");
+                response_.AppendToBuffer(&write_buffer_);
                 HandleWrite();
+                return;
+            }
+
+            // 收到完整包
+            if (request_.is_done()) {
+                response_.set_status_code(200);
+                response_.set_keep_alive(request_.is_keep_alive());
+
+                if (http_handler_) {
+                    http_handler_(request_, response_);
+                }
+                else {
+                    response_.set_status_code(404);
+                    response_.set_body("404 Not Found");
+                }
+
+                response_.AppendToBuffer(&write_buffer_);
+                request_.reset();
+                HandleWrite();
+                return;
             }
         }
     }
 
     void HttpConn::HandleWrite() {
-        std::string_view data = write_buffer_.peek();
+        std::string_view data(write_buffer_.peek(), write_buffer_.readable_bytes());
+        if (data.empty()) {return;}
 
         ssize_t n = write(fd_, data.data(), data.size());
 
@@ -44,7 +64,13 @@ namespace webserver {
             if (write_buffer_.readable_bytes() == 0) {
                 channel_.disable_writing();
                 epoller_->modify_channel(&channel_);
-                HandleClose();
+
+                if (is_keep_alive_) {
+                    // todo
+                }
+                else{
+                    HandleClose();
+                }
             }
             else {
                 channel_.enable_writing();
@@ -65,5 +91,4 @@ namespace webserver {
             close_callback_();
         }
     }
-
 } // webserver

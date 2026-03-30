@@ -3,9 +3,12 @@
 #include "server/channel.h"
 #include "server/epoller.h"
 #include "buffer/buffer.h"
-
+#include "http/http_request.h"
+#include "http/http_response.h"
 
 namespace webserver {
+    using HttpHandler = std::function<void(const HttpRequest&, HttpResponse&)>;
+
     class HttpConn {
     public:
         HttpConn(int fd, Epoller* epoller)
@@ -20,6 +23,7 @@ namespace webserver {
         }
 
         ~HttpConn() {
+            epoller_->remove_channel(&channel_);
             close(fd_);
         }
 
@@ -27,8 +31,9 @@ namespace webserver {
         void SetCloseCallback(CloseCallback close_callback) {
             close_callback_ = std::move(close_callback);
         }
-
-
+        void SetHttpHandler(HttpHandler http_handler) {
+            http_handler_ = std::move(http_handler);
+        }
 
     private:
         void HandleRead();
@@ -43,8 +48,10 @@ namespace webserver {
         Buffer read_buffer_;
         Buffer write_buffer_;
 
-        // HttpRequest request_;   // 下一步添加
-        // HttpResponse response_; // 下一步添加
+        bool is_keep_alive_ = false;
+        HttpRequest request_;
+        HttpResponse response_;
+        HttpHandler http_handler_;
     };
 } // webserver
 

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Plane War</title>
+    <script src="https://cjrtnc.leaningtech.com/3.0/cj3loader.js"></script>
+</head>
+<body>
+<div id="game-container" style="width: 800px; height: 600px; margin: 0 auto; overflow: hidden; position: relative;"></div>
+
+<script>
+    (async function () {
+        await cheerpjInit();
+        // 将 Java 渲染挂载到指定的 div 容器上
+        cheerpjCreateDisplay(800, 600, document.getElementById("game-container"));
+        await cheerpjRunJar("/app/planewar.jar");
+    })();
+</script>
+</body>
+</html>
