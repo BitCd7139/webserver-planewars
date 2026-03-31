@@ -41,6 +41,8 @@ namespace webserver {
         void enable_writing() { events_ |= EPOLLOUT; }
         void disable_writing() { events_ &= ~EPOLLOUT; }
         void enable_rdhup() { events_ |= EPOLLRDHUP; }
+        void enable_et()       { events_ |= EPOLLET; }
+        void enable_oneshot()  { events_ |= EPOLLONESHOT; }
 
     private:
         int fd_;

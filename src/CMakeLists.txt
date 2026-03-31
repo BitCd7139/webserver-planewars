@@ -4,6 +4,7 @@ file(GLOB SRC_FILES
         "server/*.cpp"
         "buffer/*.cpp"
         "http/*.cpp"
+        "timer/*.cpp"
 )
 
 # 2. 定义可执行程序目标

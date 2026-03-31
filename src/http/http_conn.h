@@ -5,25 +5,31 @@
 #include "buffer/buffer.h"
 #include "http/http_request.h"
 #include "http/http_response.h"
+#include "timer/heap_timer.h"
 
 namespace webserver {
     using HttpHandler = std::function<void(const HttpRequest&, HttpResponse&)>;
 
     class HttpConn {
     public:
-        HttpConn(int fd, Epoller* epoller)
-            : fd_(fd), channel_(fd), epoller_(epoller) {
+        HttpConn(int fd, Epoller* epoller, HeapTimer* timer)
+            : fd_(fd), channel_(fd), epoller_(epoller), timer_(timer) {
 
             channel_.set_read_callback([this]() { HandleRead(); });
             channel_.set_write_callback([this]() { HandleWrite(); });
             channel_.set_error_callback([this]() { HandleClose(); });
 
             channel_.enable_reading();
+            channel_.enable_et();
+            channel_.enable_oneshot();
             epoller_->add_channel(&channel_);
+
+            //timer_->add(fd, 60000, HttpConn::HandleClose);
         }
 
         ~HttpConn() {
             epoller_->remove_channel(&channel_);
+            timer_->cancel(fd_);
             close(fd_);
         }
 
@@ -44,6 +50,7 @@ namespace webserver {
         int fd_;
         channel channel_;
         Epoller* epoller_;
+        HeapTimer* timer_;
 
         Buffer read_buffer_;
         Buffer write_buffer_;

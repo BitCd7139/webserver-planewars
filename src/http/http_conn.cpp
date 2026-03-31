@@ -10,6 +10,7 @@
 
 namespace webserver {
     void HttpConn::HandleRead() {
+        timer_->adjust(fd_, timer_->timeout_ms_);
         int err;
         ssize_t bytes_read = read_buffer_.ReadFd(fd_, &err);
         if (bytes_read == 0) {
@@ -22,6 +23,8 @@ namespace webserver {
             std::string_view data(read_buffer_.peek(), read_buffer_.readable_bytes());
             size_t consumed = request_.Parse(data);
             read_buffer_.Retrieve(consumed);
+            timer_->adjust(fd_, timer_->timeout_ms_);
+
 
             if (request_.is_error()) {
                 // 400 Bad Request
@@ -61,12 +64,20 @@ namespace webserver {
 
         if (n > 0) {
             write_buffer_.Retrieve(n);
+
+
             if (write_buffer_.readable_bytes() == 0) {
                 channel_.disable_writing();
                 epoller_->modify_channel(&channel_);
 
                 if (is_keep_alive_) {
-                    // todo
+                    request_.reset();
+                    read_buffer_.RetrieveAll();
+                    write_buffer_.RetrieveAll();
+                    channel_.enable_reading();
+                    channel_.enable_et();
+                    channel_.enable_oneshot();
+                    epoller_->modify_channel(&channel_);
                 }
                 else{
                     HandleClose();
@@ -85,7 +96,6 @@ namespace webserver {
     }
 
     void HttpConn::HandleClose() {
-        epoller_->remove_channel(&channel_);
         LOG_INFO("Client disconnected from fd: %d", fd_);
         if (close_callback_) {
             close_callback_();

@@ -31,6 +31,7 @@ namespace webserver {
             HandleNewConnection();
         });
         listen_channel_->enable_reading();
+        listen_channel_->enable_et();
 
         epoller_->add_channel(listen_channel_.get());
     }
@@ -43,16 +44,23 @@ namespace webserver {
             int client_fd = accept4(listen_fd_, reinterpret_cast<struct sockaddr *>(&client_addr), &client_addr_len, SOCK_NONBLOCK | SOCK_CLOEXEC);
 
             if (client_fd > 0) {
-                auto conn = std::make_unique<HttpConn>(client_fd, epoller_.get());
-                conn->SetCloseCallback([this, client_fd]() {
+                auto conn = std::make_unique<HttpConn>(client_fd, epoller_.get(), &timer_);
+                timer_.add(client_fd, timer_.timeout_ms_, [this, client_fd]() {
+                    LOG_INFO("Connection timeout, fd: %d", client_fd);
+                    std::lock_guard<std::mutex> lock(mutex_);
                     users_.erase(client_fd);
-                    LOG_DEBUG("Map erase: %d", client_fd);
+                });
+                conn->SetCloseCallback([this, client_fd]() {
+                    LOG_INFO("Connection closed, fd: %d", client_fd);
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    users_.erase(client_fd);
                 });
 
                 conn->SetHttpHandler([this](const HttpRequest& req, HttpResponse& res) {
                     this->HandleHttpRequest(req, res);
                 });
 
+                std::lock_guard<std::mutex> lock(mutex_);
                 users_[client_fd] = std::move(conn);
                 LOG_INFO("New connection from client on port %d", client_fd);
             }
@@ -68,69 +76,23 @@ namespace webserver {
         }
     }
 
-    void Server::run() const {
+    void Server::run() {
         while (true) {
-            int timeout_ms = -1;
+            int timeout_ms = timer_.GetNextTick();
             std::vector<channel*> active_channels;
             epoller_->Poll(active_channels, timeout_ms);
             for (auto* channel : active_channels) {
-                channel->handle_events();
+                if (channel == listen_channel_.get()) {
+                    channel->handle_events();
+                }
+                else {
+                    threadpool_->enqueue([channel]() {
+                        channel->handle_events();
+                    });
+                }
             }
         }
     }
-
-    // void Server::HandleHttpRequest(const HttpRequest& req, HttpResponse& res) {
-    //     namespace fs = std::filesystem;
-    //
-    //     // index.html
-    //     std::string req_path = std::string(req.path());
-    //     if (req_path == "/") {
-    //         req_path = "/index.html";
-    //     }
-    //
-    //     try {
-    //         // path
-    //         fs::path base_path = fs::canonical(document_root_);
-    //         fs::path target_path = fs::weakly_canonical(base_path / req_path.substr(1));
-    //
-    //         // defence "/../../../"
-    //         auto [base_it, target_it] = std::mismatch(base_path.begin(), base_path.end(), target_path.begin());
-    //         if (base_it != base_path.end()) {
-    //             res.set_status_code(403);
-    //             res.set_body("<h1>403 Forbidden</h1>");
-    //             return;
-    //         }
-    //
-    //         // check file
-    //         if (!fs::exists(target_path) || !fs::is_regular_file(target_path)) {
-    //             res.set_status_code(404);
-    //             res.set_body("<h1>404 Not Found</h1>");
-    //             return;
-    //         }
-    //
-    //         // 5. 读取文件内容 (暂时用小文件读取方式，后续可升级为 mmap)
-    //         std::ifstream file(target_path, std::ios::binary);
-    //         if (!file.is_open()) {
-    //             res.set_status_code(500);
-    //             res.set_body("<h1>500 Internal Server Error</h1>");
-    //             return;
-    //         }
-    //
-    //         std::stringstream buffer;
-    //         buffer << file.rdbuf();
-    //
-    //         // 6. 组装响应
-    //         res.set_status_code(200);
-    //         res.set_content_type(res.GetMimeType(target_path.extension().string()));
-    //         res.set_keep_alive(req.is_keep_alive());
-    //         res.set_body(buffer.str());
-    //
-    //     } catch (const std::exception& e) {
-    //         LOG_ERROR("File system error: %s", e.what());
-    //         res.set_status_code(500);
-    //         res.set_body("<h1>500 Internal Server Error</h1>");
-    //     }
-    // }
 
 void Server::HandleHttpRequest(const HttpRequest& req, HttpResponse& res) {
         namespace fs = std::filesystem;
@@ -204,7 +166,7 @@ void Server::HandleHttpRequest(const HttpRequest& req, HttpResponse& res) {
                 }
             }
 
-            // 4. 按需读取文件内容 (优化内存：不再用 stringstream 全量读取)
+            // 4. 按需读取文件内容
             size_t read_len = end - start + 1;
             std::ifstream file(target_path, std::ios::binary);
             if (!file.is_open()) {
